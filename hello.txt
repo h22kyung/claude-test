@@ -1,0 +1,9 @@
+안녕하세요! 👋
+
+이 파일은 Claude Code on the web으로 만든 첫 번째 파일입니다.
+
+- 저장소: claude-test
+- 작성일: 2026-06-25
+- 만든 도구: Claude Code (claude.ai/code)
+
+Claude Code와 함께 즐거운 코딩 되세요!
