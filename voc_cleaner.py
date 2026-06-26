@@ -74,23 +74,61 @@ def _resolve_col(df: pd.DataFrame, wanted: str) -> str:
     )
 
 
-def load_sheets(input_path: Path):
-    """메인 시트와 소요시간 시트를 읽어 반환."""
-    xls = pd.ExcelFile(input_path)
+def _sheet_has_cols(xls, sheet, wanted) -> bool:
+    """시트의 헤더에 wanted 컬럼들이 모두 있는지 (공백/대소문자 무시)."""
+    try:
+        cols = pd.read_excel(xls, sheet_name=sheet, nrows=0).columns
+    except Exception:
+        return False
+    have = {_norm(c) for c in cols}
+    return all(_norm(w) in have for w in wanted)
 
-    main_df = pd.read_excel(xls, sheet_name=MAIN_SHEET_NAME)
 
-    # 소요시간 시트 이름을 공백 무시로 찾는다.
-    time_sheet = None
+def _find_time_sheet(xls):
+    """소요시간 시트를 찾는다. 이름 → 컬럼 자동감지 → 위치(2번째) 순.
+
+    시트 이름이 'Sheet1/Sheet2'처럼 generic이어도 동작하도록 한다.
+    """
+    # 1) 이름 일치 (공백 무시)
     for name in xls.sheet_names:
         if _norm(name) == _norm(TIME_SHEET_NAME):
-            time_sheet = name
-            break
-    if time_sheet is None:
-        raise KeyError(
-            f"소요시간 시트 '{TIME_SHEET_NAME}' 을(를) 찾을 수 없습니다. "
-            f"엑셀의 실제 시트: {xls.sheet_names}"
+            return name
+    # 2) 컬럼 자동 감지: 소요시간 + voc id 컬럼을 모두 가진 시트
+    for name in xls.sheet_names:
+        if _sheet_has_cols(xls, name, [COL_DURATION, COL_VOC_ID]):
+            return name
+    # 3) 위치 폴백: 두 번째 시트
+    if len(xls.sheet_names) >= 2:
+        return xls.sheet_names[1]
+    raise KeyError(
+        f"소요시간 시트를 찾을 수 없습니다. 시트가 1개뿐이거나 '{COL_DURATION}' "
+        f"컬럼이 없습니다. 엑셀의 실제 시트: {xls.sheet_names}"
+    )
+
+
+def load_sheets(input_path: Path):
+    """메인 시트와 소요시간 시트를 읽어 반환.
+
+    - 소요시간 시트: 이름이 generic이어도 자동 감지(_find_time_sheet).
+    - 메인 시트: MAIN_SHEET_NAME(기본=첫 시트). 단 소요시간 시트와 겹치면
+      그와 다른 첫 시트로 자동 회피한다.
+    """
+    xls = pd.ExcelFile(input_path)
+
+    time_sheet = _find_time_sheet(xls)
+
+    # 메인 시트 결정: MAIN_SHEET_NAME을 시트 위치로 변환해 소요시간 시트와 비교.
+    if isinstance(MAIN_SHEET_NAME, int):
+        main_sheet = xls.sheet_names[MAIN_SHEET_NAME]
+    else:
+        main_sheet = MAIN_SHEET_NAME
+    # 메인과 소요시간이 같은 시트로 잡히면, 소요시간이 아닌 첫 시트로 회피.
+    if main_sheet == time_sheet:
+        main_sheet = next(
+            (n for n in xls.sheet_names if n != time_sheet), main_sheet
         )
+
+    main_df = pd.read_excel(xls, sheet_name=main_sheet)
     time_df = pd.read_excel(xls, sheet_name=time_sheet)
     return main_df, time_df
 
